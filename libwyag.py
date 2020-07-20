@@ -143,3 +143,26 @@ argsp.add_argument("path",
 
 def cmd_init(args):
     repo_create(args.path)
+
+def repo_find(path=".", required=True):
+    """ Regresamos la primer carpeta que sea repositorio buscando recursivamente
+    en el padre hasta llegar a /. """
+    path = os.path.realpath(path)
+
+    # ¡Lo encontramos!
+    if os.path.isdir(os.path.join(path, ".git")):
+        return GitRepository(path)
+
+    # En otro caso buscamos en su padre...
+    parent = os.path.realpath(os.path.join(path, ".."))
+
+    # Caso base, cuando os.path.join("/", "..") == "/".
+    if parent == path:
+        if required:
+            raise Exception("No se encontró ningún repositorio git.")
+        else:
+            return None
+
+    # Hacemos recursión si aún no llegamos a la raiz
+    return repo_find(parent, required)
+
