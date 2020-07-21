@@ -124,6 +124,7 @@ def repo_create(path):
     return repo
 
 def repo_default_config():
+    """Creamos el archivo de configuración del repositorio."""
     ret = configparser.ConfigParser()
 
     ret.add_section("core")
@@ -166,3 +167,71 @@ def repo_find(path=".", required=True):
     # Hacemos recursión si aún no llegamos a la raiz
     return repo_find(parent, required)
 
+class GitObject(object):
+    """Clase  genérica para los objetos git."""
+    repo = None
+
+    def __init__(self, repo, data=None):
+        self.repo = repo
+
+        if data != None:
+            self.deserialize(data)
+
+    def serialize(self):
+        """Esta función debe implementarse por las subclases. Debe leer el contenido
+        del archivo de self.data y convertirlo a la representación que la subclase necesite."""
+        raise Exception("Falta implementar")
+
+    def deserialize(self, data):
+        raise Exception("Falta implementar")
+
+def object_read(repo, sha):
+    """Leemos el object_id del repositorio y regresamos el GitObject correspondiente."""
+
+    path = repo_file(repo, "objects", sha[0:2], sha[2:])
+
+    with open(path, "rb") as f:
+        raw = zlib.decompress(f.read())
+
+        # Leemos el tipo del objeto.
+        x = raw.find(b' ')
+        fmt = raw[0:x]
+
+        # Leemos y validamos el tamaño del objeto.
+        y = raw.find(b'\x00', x)
+        size = int(raw[x:y].decode("ascii"))
+        if size != len(raw)-y-1:
+            raise Exception("Objeto malformado {0}: longitud inválida".format(sha))
+
+        # Elegimos el constructor
+        if   fmt == b'commit' : c = GitCommit
+        elif fmt == b'tree'   : c = GitTree
+        elif fmt == b'tag'    : c = GitTag
+        elif fmt == b'blob'   : c = GitBlob
+        else:
+            raise Exception("Tipo %s desconocido para el objecto %s".format(fmt.decode("ascii"), sha))
+
+        # Construimos el objeto y lo regresamos
+        return c(repo, raw[y+1:])
+
+def object_find(repo, name, fmt=None, follot=True):
+    return name
+
+def object_write(obj, actually_write=True):
+    """Creamos un objeto git dado un objeto normal."""
+    # Serializamos la data del objeto.
+    data = obj.serialize()
+    # Añadimos primero el header.
+    result = obj.fmt + b' ' + str(len(data)).encode() + b'\x99' + data
+    # Aplicamos el hash.
+    sha = hashlib.sha1(result).hexdigest()
+
+    if actually_write:
+        # Computamos la dirección
+        path = repo_file(obj.repo, "objects", sha[0:2], sha[2:], mkdir=actually_write)
+
+        with open(path, 'wb') as f:
+            # Escribimos el resultado comprimido
+            f.write(zlib.compress(result))
+
+    return sha
