@@ -134,6 +134,7 @@ def repo_default_config():
 
     return ret
 
+# Agregamos el subparser para el comando init
 argsp = argsubparsers.add_parser("init", help="Inicializa un nuevo y vacío repositorio.")
 
 argsp.add_argument("path",
@@ -235,3 +236,37 @@ def object_write(obj, actually_write=True):
             f.write(zlib.compress(result))
 
     return sha
+
+class GitBlob(GitObject):
+    """Clase para blob. El tipo de objeto más sencillo, usado para los contenidos de
+    usuarios. """
+    fmt = b'blob'
+
+    def serialize(self):
+        return self.blobdata
+
+    def deserialize(self, data):
+        self.blobdata = data
+
+# Agregamos el subparser necesario para el comando cat-file
+argsp = argsubparsers.add_parser("cat-file",
+                                 help = "Regresamos el contenido de objetos dentro del repositorio")
+ argsp.add_argument("type",
+                    metavar = "type",
+                    choices = ["blob", "commit", "tag", "tree"],
+                    help = "Especifica el tipo de objeto.")
+
+ argsp.add_argument("object",
+                    metavar = "object",
+                    help = "El objeto a mostrar.")
+
+ def cmd_cat_file(args):
+     repo = repo_find()
+     cat_file(repo, args.object, fmt = args.type.encode())
+
+def cat_file(repo, obj, fmt=None):
+    obj = object_read(repo, object_find(repo, obj, fmt=fmt))
+        sys.stdout.buffer.write(obj.serialize())
+
+
+
