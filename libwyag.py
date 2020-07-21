@@ -239,14 +239,7 @@ def object_write(obj, actually_write=True):
 
 class GitBlob(GitObject):
     """Clase para blob. El tipo de objeto más sencillo, usado para los contenidos de
-    usuarios. """
-    fmt = b'blob'
-
-    def serialize(self):
-        return self.blobdata
-
-    def deserialize(self, data):
-        self.blobdata = data
+    usuarios. """ fmt = b'blob' def serialize(self): return self.blobdata def deserialize(self, data): self.blobdata = data
 
 # Agregamos el subparser necesario para el comando cat-file
 argsp = argsubparsers.add_parser("cat-file",
@@ -268,5 +261,46 @@ def cat_file(repo, obj, fmt=None):
     obj = object_read(repo, object_find(repo, obj, fmt=fmt))
         sys.stdout.buffer.write(obj.serialize())
 
+# Agregamos el subparser necesario para el comando hash-object
+argsp = argsubparser.add_parser(
+        "hash-object",
+        help = "Computamos el ID del objeto y, opcionalmente, creamos el blob de un archivo.")
 
+argsp.add_argument("-t",
+                   metavar = "type",
+                   dest = "type",
+                   choiches = ["blob", "commit", "tag", "tree"],
+                   default = "blob",
+                   help = "Especifica el tipo.")
 
+argsp.add_argument("-w",
+                   dest = "write",
+                   action = "store_true",
+                   help = "Guarda el objeto dentro del repositorio.")
+
+argsp.add_argument("path",
+                   help = "La dirección de donde leer el objeto.")
+
+def cmd_hash_object(args):
+    if args.write:
+        repo = GitRepository(".")
+    else:
+        repo = None
+
+    with open(args.path, "rb") as fd:
+        sha = object_hash(fd, args.type.encode(), repo)
+        print(sha)
+
+def object_hash(fd, fmt, repo=None):
+    data = fd.read()
+
+    # Elegimos el constructor que el 'header' nos indique
+
+    if   fmt == b'commit' : obj = GitCommit(repo, data)
+    elif fmt == b'tree'   : obj = GitTree(repo, data)
+    elif fmt == b'tag'    : obj = GitTag(repo, data)
+    elif fmt == b'blob'   : obj = GitBlob(repo, data)
+    else:
+        raise Exception("Tipo %s desconocido." % fmt)
+
+    return object_write(obj, repo)
