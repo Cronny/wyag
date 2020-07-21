@@ -304,3 +304,79 @@ def object_hash(fd, fmt, repo=None):
         raise Exception("Tipo %s desconocido." % fmt)
 
     return object_write(obj, repo)
+
+def kvlm_parse(raw, start=0, dct=None):
+    """Parser para el formato de los commit y tags. El nombre es por
+    Key-Value List with Message."""
+    if not dct:
+        dct = collections.OrderedDict()
+
+    # Buscamos el siguiente espacio y salto de línea.
+    spc = raw.find(b' ', start)
+    nl = raw.find(b'\n', start)
+    # Si encontramos el espacio antes del salto, encontramos una keyword.
+
+    # Caso Base. Si encontramos primero un salto de línea lo que sigue
+    # es el mensaje del commit. Si no encontramos un espacio regresamos -1.
+    if (spc < 0) or (nl < spc):
+        assert(nl == start)
+        dct[b''] = raw[start+1:]
+        return dct
+
+    # Paso Recursivo. Leemos una pareja de llave-valor y hacemos recursión al
+    # siguiente.
+    key = raw[start:spc]
+
+    # Hay que encontrar el final del valor. Para esto buscamos el primer \n
+    # sin un espacio despues, esto porque las lineas que continuan el valor
+    # empiezan con un espacio.
+    end = start
+    while True:
+        end = raw.find(b'\n', end+1)
+        if raw[end+1] != ord(' '): break
+
+    # Guardamos el valor y quitamos el espacio de la linea de continuación.
+    value = raw[spc+1:end].replace(b'\n ', b'\n')
+
+    # No hay que sobreescribir data.
+    if key in dct:
+        if type(dct[key]) == list:
+            dct[key].append(value)
+        else:
+            dct[key] = [dct[key], value]
+    else:
+        dct[key] = value
+
+    return kvlm_parse(raw, start=end+1, dct=dct)
+
+def kvlm_serialize(kvlm):
+    ret = b''
+
+    # Campos de salida
+    for k in kvlm.keys():
+        # Nos saltamos el mensaje
+        if k == b'': continue
+        val = kvlm[k]
+        # Normalizamos a una lista
+        if type(val) != list:
+            val = [val]
+
+        for v in val:
+            ret += k + b' ' + (v.replace(b'\n', b'\n ')) + b'\n'
+
+    # Agregamos el mensaje.
+    ret += b'\n' + kvlm[b'']
+
+    return ret
+
+class GitCommit(GitObject):
+    fmt = b'commit'
+
+    def deserialize(self, data):
+        self.kvlm = kvlm_parse(data)
+
+    def serialize(self):
+        return kvlm_serialize(self.kvlm)
+
+
+
