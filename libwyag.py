@@ -7,10 +7,10 @@ import re
 import sys
 import zlib
 
-# Definimos a los parser(os xD) para los argumentos de la línea de comandos
+# Definimos a los parser para los argumentos de la línea de comandos
 argparser = argparse.ArgumentParser(description="Content tracker")
-
 argsubparsers = argparser.add_subparsers(title="Commands", dest="command")
+
 # Cada llamada a wyag *debe* tener un argumento (que lo leeremos con el subparser)
 argsubparsers.required = True
 
@@ -55,6 +55,7 @@ class GitRepository(object):
         elif not force:
             raise Exception("Archivo de configuración faltante.")
 
+        # Verificamos que la version del repositorio sea 0
         if not force:
             vers = int(self.conf.get("core", "repositoryformatversion"))
             if vers != 0:
@@ -66,8 +67,8 @@ def repo_path(repo, *path):
 
 def repo_file(repo, *path, mkdir=False):
     """Computamos la dirección del archivo. Se crea dirname(*path) si no existe.
-repo_file(r, \"refs\", \"remotes\", \"origin\", \"HEAD\") creará
-.git/refs/remotes/origin."""
+        repo_file(r, \"refs\", \"remotes\", \"origin\", \"HEAD\") creará
+        .git/refs/remotes/origin."""
 
     if repo_dir(repo, *path[:-1], mkdir=mkdir):
         return repo_path(repo, *path)
@@ -239,30 +240,37 @@ def object_write(obj, actually_write=True):
 
 class GitBlob(GitObject):
     """Clase para blob. El tipo de objeto más sencillo, usado para los contenidos de
-    usuarios. """ fmt = b'blob' def serialize(self): return self.blobdata def deserialize(self, data): self.blobdata = data
+    usuarios. """
+    fmt = b'blob'
+
+    def serialize(self):
+        return self.blobdata 
+
+    def deserialize(self, data):
+        self.blobdata = data
 
 # Agregamos el subparser necesario para el comando cat-file
 argsp = argsubparsers.add_parser("cat-file",
                                  help = "Regresamos el contenido de objetos dentro del repositorio")
- argsp.add_argument("type",
+argsp.add_argument("type",
                     metavar = "type",
                     choices = ["blob", "commit", "tag", "tree"],
                     help = "Especifica el tipo de objeto.")
 
- argsp.add_argument("object",
+argsp.add_argument("object",
                     metavar = "object",
                     help = "El objeto a mostrar.")
 
- def cmd_cat_file(args):
+def cmd_cat_file(args):
      repo = repo_find()
      cat_file(repo, args.object, fmt = args.type.encode())
 
 def cat_file(repo, obj, fmt=None):
     obj = object_read(repo, object_find(repo, obj, fmt=fmt))
-        sys.stdout.buffer.write(obj.serialize())
+    sys.stdout.buffer.write(obj.serialize())
 
 # Agregamos el subparser necesario para el comando hash-object
-argsp = argsubparser.add_parser(
+argsp = argsubparsers.add_parser(
         "hash-object",
         help = "Computamos el ID del objeto y, opcionalmente, creamos el blob de un archivo.")
 
@@ -378,5 +386,39 @@ class GitCommit(GitObject):
     def serialize(self):
         return kvlm_serialize(self.kvlm)
 
+# Comando log
+argsp = argsubparsers.add_parser("log", help="Muestra la historia de un commit dado.")
+argsp.add_argument("commit",
+                    default="HEAD",
+                    nargs="?",
+                    help="Commit con el que empezar.")
 
+def cmd_log(args):
+    repo = repo_find()
+
+    print("digraph wyaglog{")
+    log_graphviz(repo, object_find(repo, args.commit), set())
+    print("}")
+
+def log_graphviz(repo, sha, seen):
+    if sha in seen:
+        return
+    seen.add(sha)
+
+    commit = object_read(repo, sha)
+    assert (commit.fmt==b'commit')
+
+    if not b'parent' in commit.kvlm.keys():
+        # Caso base: el commit inicial
+        return
+    
+    parents = commit.kvlm[b'parent']
+
+    if type(parents) != list:
+        parents = [parents]
+    
+    for p in parents:
+        p = p.decode("ascii")
+        print("c_{0} -> c_{1};".format(sha, p))
+        log_graphviz(repo, p, seen)
 
