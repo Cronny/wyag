@@ -2,6 +2,7 @@ import argparse
 import collections
 import configparser
 import hashlib
+from operator import mod
 import os
 import re
 import sys
@@ -421,4 +422,87 @@ def log_graphviz(repo, sha, seen):
         p = p.decode("ascii")
         print("c_{0} -> c_{1};".format(sha, p))
         log_graphviz(repo, p, seen)
+
+# Árboles
+class GitTreeLeaf(object):
+    """"Representa una hoja en un árbol de Git."""
+    def __init__(self, mode, path, sha):
+        self.mode = mode
+        self.path = path
+        self.sha = sha
+
+def tree_parse_one(raw, start=0):
+    """"Parser que extrae un registro y regresa sus datos parseados en una hoja,
+    junto con la posición que alcanzó en la data de entrada."""
+    # Encontramos el espacio, delimitador de modo
+    x = raw.find(b' ', start)
+    assert(x-start==5 or x-start==6) # Nos aseguramos que este en el lugar correcto
+    
+    mode = raw[start:x]
+    
+    # Encontramos NULL, delimitador del path 
+    y = raw.find(b'\x00', x)
+
+    path = raw[x+1:y]
+
+    # Leemos el SHA y lo convertimos a una cadena hex
+
+    sha = hex(
+        int.from_bytes(
+            raw[y+1:y+21], "big"))[2:] # <- quitamos el 0x que agrega hex()
+
+
+    return y+21, GitTreeLeaf(mode, path, sha)
+
+def tree_parse(raw):
+    """"Parser de un árbol. Llama al parser anterior en loop hasta que
+    los datos se acaban."""
+    pos = 0
+    max = len(raw)
+    ret = list()
+    while pos < max:
+        pos, data = tree_parse_one(raw, pos)
+        ret.append(data)
+
+    return ret
+
+def tree_serialize(obj):
+    ret = b''
+    for i in obj.items:
+        ret += i.mode
+        ret += b''
+        ret += i.path
+        ret += b'\x00'
+        sha = int(i.sha, 16)
+        ret += sha.to_bytes(20, byteorder="big")
+    return ret
+
+class GitTree(GitObject):
+    fmt = b'tree'
+
+    def deserialize(self, data):
+        self.items = tree_parse(data)
+
+    def serialize(self):
+        return tree_serialize(self)
+
+# Comando ls-tree
+argsp = argsubparsers.add_parser("ls-tree", help="Imprime un objeto árbol.")
+argsp.add_argument("object",
+                    help="El objeto a mostrar.")
+
+def cmd_ls_tree(args):
+    repo = repo_find()
+    obj = object_read(repo, object_find(repo, args.object, fmt=b'tree'))
+
+    for item in obj.items:
+        print("{0} {1} {2}\t{3}".format(
+            "0" * (6 - len(item.mode)) + item.mode.decode("ascii"),
+            # Como el comando de git ls-tree, podemos mostrar el
+            # tipo del objeto al que apunta.
+            object_read(repo, item.sha).fmt.decode("ascii"),
+            item.sha,
+            item.path.decode("ascii")
+        ))
+
 
