@@ -278,7 +278,7 @@ argsp = argsubparsers.add_parser(
 argsp.add_argument("-t",
                    metavar = "type",
                    dest = "type",
-                   choiches = ["blob", "commit", "tag", "tree"],
+                   choices = ["blob", "commit", "tag", "tree"],
                    default = "blob",
                    help = "Especifica el tipo.")
 
